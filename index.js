@@ -23,6 +23,12 @@
 // that exact name — added alongside the existing type tag, not replacing it), and archives
 // the thread. Only members with the Staff role (or Manage Server) can use these buttons.
 //
+// For Mabuhay Miles specifically, a decision also tries to edit the pilot's original
+// ephemeral "submitted" message in #mm-application so it doesn't sit there looking
+// unprocessed forever — but Discord only allows editing that message within ~15 minutes of
+// it being sent, so this is best-effort (pendingMmTickets tracks the token needed for it).
+// The DM sent to the pilot is the reliable notification either way.
+//
 // Type Rating requests aren't wired up yet — deferred until the Crew Center exists.
 
 import "dotenv/config";
@@ -48,6 +54,12 @@ import { startCloudflareTunnel } from "./tunnel.js";
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 const MM_TAG_NAME = "Mabuhay Miles";
+
+// Maps a Mabuhay Miles forum thread id -> the interaction token behind the pilot's
+// ephemeral "submitted" message in #mm-application, so a decision can try to edit that
+// message in place. Discord only allows editing it within 15 minutes of creation, so this
+// is best-effort — the DM (sent regardless) is the reliable notification.
+const pendingMmTickets = new Map();
 
 const DECISION_COPY = {
   mm: {
@@ -141,15 +153,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await interaction.editReply({
         content:
           `Your ${kind === "upgrade" ? "upgrade" : "membership"} request has been submitted — staff will process it shortly. ` +
-          "Changed your mind? Cancel it below.",
+          "We'll DM you the outcome, since this message can't update itself after a while. " +
+          "Changed your mind before then? Cancel it below.",
         components: [row]
       });
+
+      pendingMmTickets.set(thread.id, { token: interaction.token, createdAt: Date.now() });
       return;
     }
 
     if (interaction.isButton() && interaction.customId.startsWith("mm_cancel_")) {
       const threadId = interaction.customId.replace("mm_cancel_", "");
       await interaction.deferUpdate();
+      pendingMmTickets.delete(threadId);
 
       const thread = await interaction.guild.channels.fetch(threadId).catch(() => null);
 
@@ -236,6 +252,25 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const pilotUser = await client.users.fetch(pilotId).catch(() => null);
         const dmText = DECISION_COPY[kind]?.[isApprove ? "approve" : "reject"];
         if (pilotUser && dmText) await pilotUser.send(dmText).catch(() => {});
+      }
+
+      if (kind === "mm") {
+        const pending = pendingMmTickets.get(thread.id);
+        pendingMmTickets.delete(thread.id);
+        if (pending) {
+          // Best-effort: only works if staff decided within ~15 minutes of the pilot's
+          // original request (Discord's own limit on editing an interaction reply). If it
+          // fails (expired token, message deleted, etc.), the DM above is the fallback the
+          // pilot actually sees.
+          await client.rest
+            .patch(Routes.webhookMessage(DISCORD_CLIENT_ID, pending.token, "@original"), {
+              body: {
+                content: `${decisionEmoji} Your request has been **${decisionLabel.toLowerCase()}** by staff. Check your DMs for details.`,
+                components: []
+              }
+            })
+            .catch(() => {});
+        }
       }
       return;
     }

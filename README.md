@@ -18,7 +18,11 @@ Handles the Mabuhay Miles ticket flow in Discord:
    buttons so it can't be double-processed, adds an **Approved**/**Rejected** post tag
    (alongside the existing type tag, not replacing it — the bot looks the tag up by that
    exact name, so it's skipped harmlessly if you rename or remove it), archives the thread,
-   and DMs the pilot (silently skipped if their DMs are closed).
+   and DMs the pilot (silently skipped if their DMs are closed). For Mabuhay Miles, it also
+   tries to update the pilot's original "submitted" message in `#mm-application` so it
+   doesn't sit there looking unprocessed — this only works if the decision happens within
+   about 15 minutes of the request (a Discord limit, not something this bot controls), so
+   the DM is the notification pilots can actually count on.
 
 **Pilot Applications:** the website's Join Us form POSTs to this bot's `/pilot-application`
 HTTP endpoint (see `server.js`), which creates a forum post the same way as Mabuhay Miles —

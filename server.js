@@ -23,6 +23,21 @@ function clean(value, maxLength = 1000) {
   return str ? str.slice(0, maxLength) : "—";
 }
 
+// Prefers the link the pilot pasted in (so staff land on exactly the profile they meant,
+// not one reconstructed from a possibly-mistyped username). Falls back to a constructed
+// link only if the pasted one is missing or isn't actually an IFC profile URL.
+function resolveIfProfileUrl(ifUsername, ifProfileLink) {
+  if (ifProfileLink) {
+    try {
+      const parsed = new URL(ifProfileLink.toString().trim());
+      if (parsed.hostname === "community.infiniteflight.com") return parsed.toString();
+    } catch (err) {
+      // not a valid URL — fall through to the constructed fallback
+    }
+  }
+  return "https://community.infiniteflight.com/u/" + encodeURIComponent(clean(ifUsername, 100));
+}
+
 export function startPilotApplicationServer(client) {
   const app = express();
   app.use(express.json({ limit: "20kb" }));
@@ -60,13 +75,13 @@ export function startPilotApplicationServer(client) {
       return res.status(503).json({ ok: false, error: "bot_not_ready" });
     }
 
-    const { preferredName, pilotGrade, ifUsername, discordUsername, staffPosition, whyJoin } = req.body || {};
+    const { preferredName, pilotGrade, ifUsername, ifProfileLink, discordUsername, staffPosition, whyJoin } = req.body || {};
     if (!preferredName || !pilotGrade || !ifUsername || !discordUsername || !whyJoin) {
       return res.status(400).json({ ok: false, error: "missing_fields" });
     }
 
     try {
-      const ifProfileUrl = "https://community.infiniteflight.com/u/" + encodeURIComponent(clean(ifUsername, 100));
+      const ifProfileUrl = resolveIfProfileUrl(ifUsername, ifProfileLink);
 
       const embed = new EmbedBuilder()
         .setColor(PRVA_RED)

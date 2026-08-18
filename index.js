@@ -10,9 +10,10 @@
 //      the request was submitted, with a "Cancel Request" button.
 //   4. If the pilot clicks Cancel, the bot posts a cancellation note in the forum thread
 //      and archives it, so staff don't process a withdrawn request.
-//   5. Staff verify the pilot's hours (in the Crew Center, once that exists) and handle
-//      the actual membership card themselves — this bot only handles the request/notify
-//      flow, not the Crew Center side.
+//   5. Staff verify the pilot's hours (in the Crew Center, once that exists), then click
+//      Approve or Reject directly on the forum post. Either one posts a decision note in
+//      the thread, removes the buttons, archives the thread, and DMs the pilot. Only
+//      members with the Staff role (or Manage Server) can use these buttons.
 //
 // NOTE: Pilot Applications (from the website's Join Us form) and Type Rating requests are
 // not wired up in this file yet — see the PRVA chat history / README for what's still
@@ -100,6 +101,11 @@ async function createMmForumPost(interaction, kind) {
   const tagId = findTagId(forumChannel, MM_TAG_NAME);
   const label = kind === "upgrade" ? "Mabuhay Miles Upgrade" : "Mabuhay Miles Application";
 
+  const decisionRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`mm_approve_${interaction.user.id}`).setLabel("Approve").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`mm_reject_${interaction.user.id}`).setLabel("Reject").setStyle(ButtonStyle.Danger)
+  );
+
   const thread = await forumChannel.threads.create({
     name: `${interaction.user.username} — ${label}`,
     appliedTags: tagId ? [tagId] : [],
@@ -112,11 +118,19 @@ async function createMmForumPost(interaction, kind) {
             `**Type:** ${label}\n**Pilot:** <@${interaction.user.id}> (${interaction.user.username})\n\n` +
               "Please verify their hours in the Crew Center before approving."
           )
-      ]
+      ],
+      components: [decisionRow]
     }
   });
 
   return thread;
+}
+
+function isStaffMember(member) {
+  if (!member) return false;
+  const hasRole = member.roles?.cache?.has(STAFF_ROLE_ID);
+  const hasManage = member.permissions?.has?.(PermissionFlagsBits.ManageGuild);
+  return Boolean(hasRole || hasManage);
 }
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -162,7 +176,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await interaction.deferUpdate();
 
       const thread = await interaction.guild.channels.fetch(threadId).catch(() => null);
+
+      if (thread?.archived) {
+        await interaction.editReply({
+          content: "This request has already been handled by staff and can no longer be cancelled.",
+          components: []
+        });
+        return;
+      }
+
       if (thread) {
+        const starterMessage = await thread.fetchStarterMessage().catch(() => null);
+        if (starterMessage) await starterMessage.edit({ components: [] }).catch(() => {});
+
         await thread
           .send({
             embeds: [
@@ -179,6 +205,47 @@ client.on(Events.InteractionCreate, async (interaction) => {
         content: "Your request has been cancelled.",
         components: []
       });
+      return;
+    }
+
+    if (interaction.isButton() && (interaction.customId.startsWith("mm_approve_") || interaction.customId.startsWith("mm_reject_"))) {
+      const isApprove = interaction.customId.startsWith("mm_approve_");
+      const pilotId = interaction.customId.replace(isApprove ? "mm_approve_" : "mm_reject_", "");
+
+      if (!isStaffMember(interaction.member)) {
+        await interaction.reply({ content: "Only staff can approve or reject requests.", flags: MessageFlags.Ephemeral });
+        return;
+      }
+
+      await interaction.deferUpdate();
+
+      const thread = interaction.channel;
+      const decisionLabel = isApprove ? "Approved" : "Rejected";
+      const decisionEmoji = isApprove ? "✅" : "❌";
+      const decisionColor = isApprove ? 0x2ecc71 : 0xe74c3c;
+
+      await interaction.message.edit({ components: [] }).catch(() => {});
+
+      await thread
+        .send({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(decisionColor)
+              .setDescription(`${decisionEmoji} **${decisionLabel}** by <@${interaction.user.id}>.`)
+          ]
+        })
+        .catch(() => {});
+
+      await thread.setName(`${decisionEmoji} ${thread.name}`.slice(0, 100)).catch(() => {});
+      await thread.setArchived(true).catch(() => {});
+
+      const pilotUser = await client.users.fetch(pilotId).catch(() => null);
+      if (pilotUser) {
+        const dmText = isApprove
+          ? "Your Mabuhay Miles request has been approved! Check the server for your updated status."
+          : "Your Mabuhay Miles request wasn't approved this time. Reach out to staff on Discord if you have questions.";
+        await pilotUser.send(dmText).catch(() => {});
+      }
       return;
     }
   } catch (err) {

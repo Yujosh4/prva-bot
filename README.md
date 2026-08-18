@@ -11,8 +11,12 @@ Handles the Mabuhay Miles ticket flow in Discord:
    request was submitted, with a **Cancel Request** button.
 4. If they click Cancel, the bot posts a cancellation note in the forum thread and archives
    it, so staff don't process a withdrawn request.
-5. Staff verify the pilot's hours (in the Crew Center, once that exists) and handle the
-   actual membership card themselves — this bot only handles the request/notify flow.
+5. Staff verify the pilot's hours (in the Crew Center, once that exists), then click
+   **Approve** or **Reject** directly on the forum post. Only members with the Staff role
+   (or Manage Server permission) can use these buttons — anyone else gets an ephemeral
+   "only staff" message. Either choice posts a decision note in the thread, removes the
+   buttons so it can't be double-processed, archives the thread, and DMs the pilot (silently
+   skipped if their DMs are closed).
 
 **Not wired up yet:** Pilot Applications (the website's Join Us form posts via a plain
 webhook, separately — see `Website/join.html`) and Type Rating requests. Both are meant to

@@ -1,6 +1,6 @@
-// PRVA Mabuhay Miles bot
+// PRVA bot
 //
-// Flow:
+// Mabuhay Miles flow:
 //   1. Staff runs /mm-setup once in the PUBLIC #mm-application channel. This posts a
 //      ticket-style embed with two buttons: "Apply for Mabuhay Miles" and
 //      "Upgrade Mabuhay Miles".
@@ -10,14 +10,19 @@
 //      the request was submitted, with a "Cancel Request" button.
 //   4. If the pilot clicks Cancel, the bot posts a cancellation note in the forum thread
 //      and archives it, so staff don't process a withdrawn request.
-//   5. Staff verify the pilot's hours (in the Crew Center, once that exists), then click
-//      Approve or Reject directly on the forum post. Either one posts a decision note in
-//      the thread, removes the buttons, archives the thread, and DMs the pilot. Only
-//      members with the Staff role (or Manage Server) can use these buttons.
 //
-// NOTE: Pilot Applications (from the website's Join Us form) and Type Rating requests are
-// not wired up in this file yet — see the PRVA chat history / README for what's still
-// pending clarification.
+// Pilot Application flow:
+//   The website's Join Us form POSTs to this bot's /pilot-application HTTP endpoint (see
+//   server.js), which creates a forum post the same way, tagged "Pilot Application". There's
+//   no verified Discord user id for these (the form only collects a free-text Discord
+//   username), so decision buttons don't DM the applicant — see DECISION_COPY below.
+//
+// Both flows share one decision step: staff click Approve or Reject directly on the forum
+// post. Either one posts a decision note in the thread, removes the buttons so it can't be
+// double-processed, and archives the thread. Only members with the Staff role (or Manage
+// Server) can use these buttons.
+//
+// Type Rating requests aren't wired up yet — deferred until the Crew Center exists.
 
 import "dotenv/config";
 import {
@@ -32,29 +37,26 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ChannelType,
   MessageFlags
 } from "discord.js";
-
-const { DISCORD_TOKEN, DISCORD_CLIENT_ID, GUILD_ID, PILOT_APPLICATIONS_FORUM_CHANNEL_ID, STAFF_ROLE_ID } = process.env;
-
-for (const [name, value] of Object.entries({
-  DISCORD_TOKEN,
-  DISCORD_CLIENT_ID,
-  GUILD_ID,
-  PILOT_APPLICATIONS_FORUM_CHANNEL_ID,
-  STAFF_ROLE_ID
-})) {
-  if (!value) {
-    console.error(`Missing required environment variable: ${name}. Check your .env / host env settings.`);
-    process.exit(1);
-  }
-}
+import { DISCORD_TOKEN, DISCORD_CLIENT_ID, GUILD_ID, PILOT_APPLICATIONS_FORUM_CHANNEL_ID, STAFF_ROLE_ID } from "./env.js";
+import { PRVA_RED, isStaffMember, buildDecisionRow, createForumThread } from "./forumPosts.js";
+import { startPilotApplicationServer } from "./server.js";
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-const PRVA_RED = 0xc8102e;
 const MM_TAG_NAME = "Mabuhay Miles";
+
+const DECISION_COPY = {
+  mm: {
+    approve: "Your Mabuhay Miles request has been approved! Check the server for your updated status.",
+    reject: "Your Mabuhay Miles request wasn't approved this time. Reach out to staff on Discord if you have questions."
+  },
+  pilot: {
+    approve: "Your PRVA pilot application has been approved — welcome aboard! Check Discord for next steps.",
+    reject: "Your PRVA pilot application wasn't approved this time. Feel free to reach out to staff on Discord if you have questions."
+  }
+};
 
 const setupCommand = new SlashCommandBuilder()
   .setName("mm-setup")
@@ -69,15 +71,9 @@ async function registerCommands() {
   console.log("Slash commands registered.");
 }
 
-function findTagId(forumChannel, name) {
-  const tag = forumChannel.availableTags.find((t) => t.name.toLowerCase() === name.toLowerCase());
-  return tag ? tag.id : null;
-}
-
 client.once(Events.ClientReady, async (c) => {
   console.log(`Logged in as ${c.user.tag}`);
-  // Prints every forum's tags on startup — handy for grabbing tag IDs for the website's
-  // webhook config (a plain webhook can't look tags up by name the way this bot can).
+  // Prints every forum's tags on startup — handy for confirming tag names/ids line up.
   try {
     const forum = await c.channels.fetch(PILOT_APPLICATIONS_FORUM_CHANNEL_ID);
     if (forum?.availableTags) {
@@ -93,44 +89,21 @@ client.once(Events.ClientReady, async (c) => {
 });
 
 async function createMmForumPost(interaction, kind) {
-  const forumChannel = await interaction.guild.channels.fetch(PILOT_APPLICATIONS_FORUM_CHANNEL_ID);
-  if (!forumChannel || forumChannel.type !== ChannelType.GuildForum) {
-    throw new Error("PILOT_APPLICATIONS_FORUM_CHANNEL_ID isn't a forum channel.");
-  }
-
-  const tagId = findTagId(forumChannel, MM_TAG_NAME);
   const label = kind === "upgrade" ? "Mabuhay Miles Upgrade" : "Mabuhay Miles Application";
 
-  const decisionRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`mm_approve_${interaction.user.id}`).setLabel("Approve").setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId(`mm_reject_${interaction.user.id}`).setLabel("Reject").setStyle(ButtonStyle.Danger)
-  );
-
-  const thread = await forumChannel.threads.create({
-    name: `${interaction.user.username} — ${label}`,
-    appliedTags: tagId ? [tagId] : [],
-    message: {
-      content: `<@&${STAFF_ROLE_ID}> New ${label.toLowerCase()} from <@${interaction.user.id}>.`,
-      embeds: [
-        new EmbedBuilder()
-          .setColor(PRVA_RED)
-          .setDescription(
-            `**Type:** ${label}\n**Pilot:** <@${interaction.user.id}> (${interaction.user.username})\n\n` +
-              "Please verify their hours in the Crew Center before approving."
-          )
-      ],
-      components: [decisionRow]
-    }
+  return createForumThread({
+    client,
+    tagName: MM_TAG_NAME,
+    threadName: `${interaction.user.username} — ${label}`,
+    pingContent: `<@&${STAFF_ROLE_ID}> New ${label.toLowerCase()} from <@${interaction.user.id}>.`,
+    embed: new EmbedBuilder()
+      .setColor(PRVA_RED)
+      .setDescription(
+        `**Type:** ${label}\n**Pilot:** <@${interaction.user.id}> (${interaction.user.username})\n\n` +
+          "Please verify their hours in the Crew Center before approving."
+      ),
+    decisionRow: buildDecisionRow("mm", interaction.user.id)
   });
-
-  return thread;
-}
-
-function isStaffMember(member) {
-  if (!member) return false;
-  const hasRole = member.roles?.cache?.has(STAFF_ROLE_ID);
-  const hasManage = member.permissions?.has?.(PermissionFlagsBits.ManageGuild);
-  return Boolean(hasRole || hasManage);
 }
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -208,9 +181,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    if (interaction.isButton() && (interaction.customId.startsWith("mm_approve_") || interaction.customId.startsWith("mm_reject_"))) {
-      const isApprove = interaction.customId.startsWith("mm_approve_");
-      const pilotId = interaction.customId.replace(isApprove ? "mm_approve_" : "mm_reject_", "");
+    if (interaction.isButton() && (interaction.customId.startsWith("req_approve_") || interaction.customId.startsWith("req_reject_"))) {
+      const isApprove = interaction.customId.startsWith("req_approve_");
+      const rest = interaction.customId.replace(isApprove ? "req_approve_" : "req_reject_", "");
+      const [kind, pilotId] = rest.split(/_(.+)/);
 
       if (!isStaffMember(interaction.member)) {
         await interaction.reply({ content: "Only staff can approve or reject requests.", flags: MessageFlags.Ephemeral });
@@ -239,12 +213,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await thread.setName(`${decisionEmoji} ${thread.name}`.slice(0, 100)).catch(() => {});
       await thread.setArchived(true).catch(() => {});
 
-      const pilotUser = await client.users.fetch(pilotId).catch(() => null);
-      if (pilotUser) {
-        const dmText = isApprove
-          ? "Your Mabuhay Miles request has been approved! Check the server for your updated status."
-          : "Your Mabuhay Miles request wasn't approved this time. Reach out to staff on Discord if you have questions.";
-        await pilotUser.send(dmText).catch(() => {});
+      if (pilotId && pilotId !== "none") {
+        const pilotUser = await client.users.fetch(pilotId).catch(() => null);
+        const dmText = DECISION_COPY[kind]?.[isApprove ? "approve" : "reject"];
+        if (pilotUser && dmText) await pilotUser.send(dmText).catch(() => {});
       }
       return;
     }
@@ -258,4 +230,5 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
+startPilotApplicationServer(client);
 client.login(DISCORD_TOKEN);

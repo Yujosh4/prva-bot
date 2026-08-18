@@ -18,13 +18,20 @@ Handles the Mabuhay Miles ticket flow in Discord:
    buttons so it can't be double-processed, archives the thread, and DMs the pilot (silently
    skipped if their DMs are closed).
 
-**Not wired up yet:** Pilot Applications (the website's Join Us form posts via a plain
-webhook, separately — see `Website/join.html`) and Type Rating requests. Both are meant to
-land in `#pilot-applications` too, tagged accordingly, but the exact trigger for Type Rating
-requests hasn't been decided yet.
+**Pilot Applications:** the website's Join Us form POSTs to this bot's `/pilot-application`
+HTTP endpoint (see `server.js`), which creates a forum post the same way as Mabuhay Miles —
+tagged `Pilot Application`, with working Approve/Reject buttons. There's no verified Discord
+user id for these submissions (the form only collects a free-text Discord username), so
+decisions don't DM the applicant, just post/archive the thread. If the endpoint is
+unreachable, `join.html` falls back to posting straight to a plain Discord webhook instead
+(no buttons, but the application still reaches staff) — see **Website wiring** below.
+
+**Not wired up yet:** Type Rating requests. Meant to land in `#pilot-applications` too,
+tagged `Type Rating`, but deferred until the Crew Center exists.
 
 This is a standalone Node process — it can't run on Netlify (that's static hosting only). It
-needs somewhere that stays online 24/7. See **Hosting** below.
+needs somewhere that stays online 24/7. It also now needs an exposed HTTP port for the
+website to reach (see **Website wiring**). See **Hosting** below.
 
 ## 1. Create the bot in Discord
 
@@ -72,8 +79,10 @@ Copy `.env.example` to `.env` for local testing:
 cp .env.example .env
 ```
 
-Fill in the five values. **Never commit the real `.env` file** — it's already in
-`.gitignore`.
+Fill in the values. **Never commit the real `.env` file** — it's already in `.gitignore`.
+`PILOT_APP_API_KEY` can be any string you make up — it just has to match what you put in
+`Website/join.html`'s `PILOT_APP_API_KEY` constant. Leave `PORT` blank unless your host
+doesn't provide one automatically.
 
 ## 4. Run it locally (optional, to test before deploying)
 
@@ -99,7 +108,28 @@ option with a usable free tier for a small bot like this:
 4. Railway will detect `npm start` automatically and deploy. Check the **Deployments** logs
    for the "Logged in as..." message and the tag list.
 
-## 6. Turn it on
+## 6. Website wiring (Pilot Applications → this bot)
+
+For the website's Join Us form to reach `/pilot-application`, your host needs to expose an
+HTTP port for the bot process (separate from Discord's own connection, which is outbound
+only and needs no port).
+
+1. On Wispbyte, check your server's **Network/Allocation** tab for the public address
+   assigned to your server — usually something like `your-node.wispbyte.com:25xxx`. Set
+   `PORT` in your env vars only if Wispbyte doesn't already inject one automatically (check
+   the **Startup** tab — if it lists a `SERVER_PORT` variable, leave your own `PORT` blank).
+2. Once deployed, confirm it's reachable by visiting
+   `http://<that address>/health` in a browser — you should see `{"ok":true,...}`. If it
+   times out or refuses to connect, the port likely isn't exposed publicly on your plan —
+   ask in Wispbyte's support/docs about exposing a custom TCP/HTTP port for a Node app, or
+   fall back to leaving `PILOT_APP_API_URL` blank in `join.html` (the plain-webhook fallback
+   still works, just without Approve/Reject buttons).
+3. In `Website/join.html`, set:
+   - `PILOT_APP_API_URL` to `http://<that address>/pilot-application`
+   - `PILOT_APP_API_KEY` to the same string you set as `PILOT_APP_API_KEY` in the bot's env
+4. Push the website change — Netlify redeploys automatically.
+
+## 7. Turn it on
 
 In Discord, run `/mm-setup` in `#mm-application`. That's it — the buttons post once and
 stay there.

@@ -19,8 +19,9 @@
 //
 // Both flows share one decision step: staff click Approve or Reject directly on the forum
 // post. Either one posts a decision note in the thread, removes the buttons so it can't be
-// double-processed, and archives the thread. Only members with the Staff role (or Manage
-// Server) can use these buttons.
+// double-processed, applies an "Approved"/"Rejected" tag (if one exists on the forum by
+// that exact name — added alongside the existing type tag, not replacing it), and archives
+// the thread. Only members with the Staff role (or Manage Server) can use these buttons.
 //
 // Type Rating requests aren't wired up yet — deferred until the Crew Center exists.
 
@@ -40,7 +41,7 @@ import {
   MessageFlags
 } from "discord.js";
 import { DISCORD_TOKEN, DISCORD_CLIENT_ID, GUILD_ID, PILOT_APPLICATIONS_FORUM_CHANNEL_ID, STAFF_ROLE_ID } from "./env.js";
-import { PRVA_RED, isStaffMember, buildDecisionRow, createForumThread } from "./forumPosts.js";
+import { PRVA_RED, isStaffMember, buildDecisionRow, createForumThread, getForumChannel, findTagId } from "./forumPosts.js";
 import { startPilotApplicationServer } from "./server.js";
 import { startCloudflareTunnel } from "./tunnel.js";
 
@@ -213,6 +214,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .catch(() => {});
 
       await thread.setName(`${decisionEmoji} ${thread.name}`.slice(0, 100)).catch(() => {});
+
+      try {
+        const forumChannel = await getForumChannel(client);
+        const decisionTagId = findTagId(forumChannel, decisionLabel);
+        if (decisionTagId) {
+          const currentTags = thread.appliedTags ?? [];
+          if (!currentTags.includes(decisionTagId)) {
+            await thread.setAppliedTags([...currentTags, decisionTagId]);
+          }
+        } else {
+          console.warn(`No "${decisionLabel}" tag found on the forum — add one to enable auto-tagging.`);
+        }
+      } catch (err) {
+        console.warn("Could not apply decision tag:", err.message);
+      }
+
       await thread.setArchived(true).catch(() => {});
 
       if (pilotId && pilotId !== "none") {

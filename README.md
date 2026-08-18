@@ -15,8 +15,10 @@ Handles the Mabuhay Miles ticket flow in Discord:
    **Approve** or **Reject** directly on the forum post. Only members with the Staff role
    (or Manage Server permission) can use these buttons — anyone else gets an ephemeral
    "only staff" message. Either choice posts a decision note in the thread, removes the
-   buttons so it can't be double-processed, archives the thread, and DMs the pilot (silently
-   skipped if their DMs are closed).
+   buttons so it can't be double-processed, adds an **Approved**/**Rejected** post tag
+   (alongside the existing type tag, not replacing it — the bot looks the tag up by that
+   exact name, so it's skipped harmlessly if you rename or remove it), archives the thread,
+   and DMs the pilot (silently skipped if their DMs are closed).
 
 **Pilot Applications:** the website's Join Us form POSTs to this bot's `/pilot-application`
 HTTP endpoint (see `server.js`), which creates a forum post the same way as Mabuhay Miles —

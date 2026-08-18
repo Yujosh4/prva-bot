@@ -110,24 +110,34 @@ option with a usable free tier for a small bot like this:
 
 ## 6. Website wiring (Pilot Applications → this bot)
 
-For the website's Join Us form to reach `/pilot-application`, your host needs to expose an
-HTTP port for the bot process (separate from Discord's own connection, which is outbound
-only and needs no port).
+The website is served over `https://`, so its `fetch()` calls can't reach a plain `http://`
+endpoint (browsers block that as "mixed content") — the bot needs a real HTTPS URL. This bot
+gets one via a **Cloudflare Tunnel** (`tunnel.js`), which runs as a child process of the bot
+itself — no separate process for Wispbyte to manage, and no need for the raw IP:port to be
+publicly reachable at all, since it connects outbound to Cloudflare like the Discord
+connection already does.
 
-1. On Wispbyte, check your server's **Network/Allocation** tab for the public address
-   assigned to your server — usually something like `your-node.wispbyte.com:25xxx`. Set
-   `PORT` in your env vars only if Wispbyte doesn't already inject one automatically (check
-   the **Startup** tab — if it lists a `SERVER_PORT` variable, leave your own `PORT` blank).
-2. Once deployed, confirm it's reachable by visiting
-   `http://<that address>/health` in a browser — you should see `{"ok":true,...}`. If it
-   times out or refuses to connect, the port likely isn't exposed publicly on your plan —
-   ask in Wispbyte's support/docs about exposing a custom TCP/HTTP port for a Node app, or
-   fall back to leaving `PILOT_APP_API_URL` blank in `join.html` (the plain-webhook fallback
-   still works, just without Approve/Reject buttons).
-3. In `Website/join.html`, set:
-   - `PILOT_APP_API_URL` to `http://<that address>/pilot-application`
-   - `PILOT_APP_API_KEY` to the same string you set as `PILOT_APP_API_KEY` in the bot's env
-4. Push the website change — Netlify redeploys automatically.
+1. On first boot, the bot downloads the `cloudflared` binary automatically (via the
+   `cloudflared` npm package's postinstall step — this runs as part of `npm install`).
+2. Once connected, it logs a line like:
+   ```
+   Cloudflare Tunnel ready. Pilot Application endpoint: https://random-words-here.trycloudflare.com/pilot-application
+   ```
+   If you set `ADMIN_USER_ID` in your env vars (your own Discord user id), the bot also DMs
+   you this same URL — handy since you don't have to dig through Wispbyte's console logs.
+3. **This URL changes every time the bot restarts** (it's a free "quick tunnel", not tied to
+   a domain you own). Each time it changes, update `Website/join.html`:
+   - `PILOT_APP_API_URL` → the new URL + `/pilot-application`
+   - `PILOT_APP_API_KEY` → same string as `PILOT_APP_API_KEY` in the bot's env (only needs
+     setting once, doesn't change on restart)
+   Then push — Netlify redeploys automatically.
+4. If you forget to update it, or the bot is mid-restart, nothing breaks: `join.html` catches
+   the failed request and falls straight back to the plain Discord webhook (no Approve/Reject
+   buttons on that submission, but it still reaches staff).
+
+Optional upgrade later, if you end up owning a domain: point it at a **named** Cloudflare
+Tunnel instead of a quick one, so the URL stays fixed across restarts. Ask Claude to set that
+up when you're ready — it's a bigger change than this default.
 
 ## 7. Turn it on
 

@@ -42,6 +42,7 @@ import {
 import { DISCORD_TOKEN, DISCORD_CLIENT_ID, GUILD_ID, PILOT_APPLICATIONS_FORUM_CHANNEL_ID, STAFF_ROLE_ID } from "./env.js";
 import { PRVA_RED, isStaffMember, buildDecisionRow, createForumThread } from "./forumPosts.js";
 import { startPilotApplicationServer } from "./server.js";
+import { startCloudflareTunnel } from "./tunnel.js";
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -86,6 +87,7 @@ client.once(Events.ClientReady, async (c) => {
     console.warn("Could not read forum tags on startup:", err.message);
   }
   await registerCommands();
+  startCloudflareTunnel(c);
 });
 
 async function createMmForumPost(interaction, kind) {

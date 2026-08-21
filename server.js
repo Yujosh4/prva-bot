@@ -200,13 +200,24 @@ export function startPilotApplicationServer(client) {
         return res.status(404).json({ ok: false, error: "thread_not_found" });
       }
 
-      await thread.members.add(examinerDiscordId);
+      // Doesn't throw on a bad/non-member id (mistyped, or someone who
+      // hasn't shared a server with the bot) -- staff can always add them
+      // manually in Discord, and the assignment itself already went
+      // through in the Crew Center regardless of whether this succeeds.
+      const addResult = await thread.members.add(examinerDiscordId).then(() => true).catch((err) => {
+        console.warn("Could not add examiner to Type Rating thread (bad/non-member id?):", err.message);
+        return false;
+      });
+
       await thread.send(
-        `<@${examinerDiscordId}> has been assigned as the checkride examiner for this request. ` +
-          "Coordinate your schedule here, then log the result back in the Crew Center once it's flown."
+        addResult
+          ? `<@${examinerDiscordId}> has been assigned as the checkride examiner for this request. ` +
+              "Coordinate your schedule here, then log the result back in the Crew Center once it's flown."
+          : `Examiner assigned: \`${examinerDiscordId}\` (couldn't add them to this thread automatically -- ` +
+              "check the ID is correct and that they're in this server, or add them manually)."
       );
 
-      res.json({ ok: true });
+      res.json({ ok: true, memberAdded: addResult });
     } catch (err) {
       console.error("Failed to add examiner to Type Rating thread:", err);
       res.status(500).json({ ok: false, error: "internal_error" });

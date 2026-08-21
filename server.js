@@ -204,20 +204,28 @@ export function startPilotApplicationServer(client) {
       // hasn't shared a server with the bot) -- staff can always add them
       // manually in Discord, and the assignment itself already went
       // through in the Crew Center regardless of whether this succeeds.
-      const addResult = await thread.members.add(examinerDiscordId).then(() => true).catch((err) => {
-        console.warn("Could not add examiner to Type Rating thread (bad/non-member id?):", err.message);
-        return false;
-      });
+      // The failure reason is surfaced (in the response and the thread
+      // message, not just the server console) since a Wispbyte deploy
+      // doesn't have console access handy for diagnosing this remotely.
+      let addResult = true;
+      let addError = null;
+      try {
+        await thread.members.add(examinerDiscordId);
+      } catch (err) {
+        addResult = false;
+        addError = err?.rawError?.message || err?.message || "unknown error";
+        console.warn("Could not add examiner to Type Rating thread:", addError);
+      }
 
       await thread.send(
         addResult
           ? `<@${examinerDiscordId}> has been assigned as the checkride examiner for this request. ` +
               "Coordinate your schedule here, then log the result back in the Crew Center once it's flown."
           : `Examiner assigned: \`${examinerDiscordId}\` (couldn't add them to this thread automatically -- ` +
-              "check the ID is correct and that they're in this server, or add them manually)."
+              `Discord said: "${addError}". Check the ID is correct and that they're in this server, or add them manually).`
       );
 
-      res.json({ ok: true, memberAdded: addResult });
+      res.json({ ok: true, memberAdded: addResult, addError });
     } catch (err) {
       console.error("Failed to add examiner to Type Rating thread:", err);
       res.status(500).json({ ok: false, error: "internal_error" });

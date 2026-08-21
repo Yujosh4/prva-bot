@@ -32,8 +32,18 @@ decisions don't DM the applicant, just post/archive the thread. If the endpoint 
 unreachable, `join.html` falls back to posting straight to a plain Discord webhook instead
 (no buttons, but the application still reaches staff) — see **Website wiring** below.
 
-**Not wired up yet:** Type Rating requests. Meant to land in `#pilot-applications` too,
-tagged `Type Rating`, but deferred until the Crew Center exists.
+**Type Rating requests:** the Crew Center's Type Rating page POSTs to this bot's
+`/typerating-request` HTTP endpoint (see `server.js`) the moment a pilot submits a request,
+which opens a real **private thread** on a plain text channel (not a forum post like the two
+flows above — a checkride conversation between one pilot and one examiner shouldn't be
+visible to everyone who can see `#pilot-applications`) and adds the pilot to it. Everything
+else — approve/reject, assigning an examiner, scheduling, and the pass/fail result — happens
+in the Crew Center itself, not with Discord buttons; the only other thing this bot does for
+this flow is add the assigned examiner to that same thread once staff presses "Assign
+Examiner" there, via `/typerating-assign-examiner`. If either endpoint is unreachable, the
+Crew Center request/assignment still goes through — it just proceeds without a thread (or
+without the examiner added to one), same "never block the real action on the bot being up"
+fallback philosophy as the pilot-application webhook fallback below.
 
 This is a standalone Node process — it can't run on Netlify (that's static hosting only). It
 needs somewhere that stays online 24/7. It also now needs an exposed HTTP port for the
@@ -53,10 +63,14 @@ website to reach (see **Website wiring**). See **Hosting** below.
    - View Channels
    - Send Messages
    - Create Public Threads
+   - Create Private Threads
    - Send Messages in Threads
    - Manage Threads
    - Embed Links
 5. Copy the generated URL, open it, and invite the bot to your PRVA server.
+   Already invited it before adding **Create Private Threads** just now? Re-run this same
+   URL Generator step and open the new link — Discord updates an existing bot's permissions
+   in place, no need to kick and re-invite it.
 
 ## 2. Set up the Discord server
 
@@ -67,11 +81,17 @@ website to reach (see **Website wiring**). See **Hosting** below.
    or visible to pilots too is still open — ask Claude to lock it down once you've decided.)
 4. In that forum channel's settings, add a **Post Tag** named exactly `Mabuhay Miles`. The
    bot looks it up by name at startup and logs all available tags to the console — handy
-   once you add `Pilot Application` and `Type Rating` tags too.
-5. Collect these IDs (right-click → Copy ID, with Developer Mode on):
+   once you add a `Pilot Application` tag too.
+5. Create a plain **text channel** (not a forum) named e.g. `type-rating` for the bot to open
+   private threads in. Its own visibility can be whatever you want (staff-only is simplest,
+   since only staff need to see the channel itself — each request's thread is private
+   regardless, visible only to the pilot, the assigned examiner, and staff with Manage
+   Threads).
+6. Collect these IDs (right-click → Copy ID, with Developer Mode on):
    - Your server → **Server ID** (`GUILD_ID`)
    - The `#pilot-applications` forum channel → **Channel ID**
      (`PILOT_APPLICATIONS_FORUM_CHANNEL_ID`)
+   - The `#type-rating` text channel → **Channel ID** (`TYPE_RATING_CHANNEL_ID`)
    - Your Staff role (Server Settings → Roles → right-click it) → **Role ID**
      (`STAFF_ROLE_ID`)
    - Your bot's application → **Application ID**, on the General Information page in the
@@ -114,14 +134,14 @@ option with a usable free tier for a small bot like this:
 4. Railway will detect `npm start` automatically and deploy. Check the **Deployments** logs
    for the "Logged in as..." message and the tag list.
 
-## 6. Website wiring (Pilot Applications → this bot)
+## 6. Website + Crew Center wiring (this bot has two callers now)
 
-The website is served over `https://`, so its `fetch()` calls can't reach a plain `http://`
-endpoint (browsers block that as "mixed content") — the bot needs a real HTTPS URL. This bot
-gets one via a **Cloudflare Tunnel** (`tunnel.js`), which runs as a child process of the bot
-itself — no separate process for Wispbyte to manage, and no need for the raw IP:port to be
-publicly reachable at all, since it connects outbound to Cloudflare like the Discord
-connection already does.
+The website and the Crew Center are both served over `https://`, so their `fetch()` calls
+can't reach a plain `http://` endpoint (browsers block that as "mixed content") — the bot
+needs a real HTTPS URL. This bot gets one via a **Cloudflare Tunnel** (`tunnel.js`), which
+runs as a child process of the bot itself — no separate process for Wispbyte to manage, and
+no need for the raw IP:port to be publicly reachable at all, since it connects outbound to
+Cloudflare like the Discord connection already does.
 
 1. On first boot, the bot downloads the `cloudflared` binary automatically (via the
    `cloudflared` npm package's postinstall step — this runs as part of `npm install`).
@@ -129,17 +149,26 @@ connection already does.
    ```
    Cloudflare Tunnel ready. Pilot Application endpoint: https://random-words-here.trycloudflare.com/pilot-application
    ```
-   If you set `ADMIN_USER_ID` in your env vars (your own Discord user id), the bot also DMs
-   you this same URL — handy since you don't have to dig through Wispbyte's console logs.
+   That same base URL (swap the path) is what both `/typerating-request` and
+   `/typerating-assign-examiner` are reachable at too. If you set `ADMIN_USER_ID` in your env
+   vars (your own Discord user id), the bot also DMs you this same URL — handy since you
+   don't have to dig through Wispbyte's console logs.
 3. **This URL changes every time the bot restarts** (it's a free "quick tunnel", not tied to
-   a domain you own). Each time it changes, update `Website/join.html`:
-   - `PILOT_APP_API_URL` → the new URL + `/pilot-application`
-   - `PILOT_APP_API_KEY` → same string as `PILOT_APP_API_KEY` in the bot's env (only needs
-     setting once, doesn't change on restart)
-   Then push — Netlify redeploys automatically.
-4. If you forget to update it, or the bot is mid-restart, nothing breaks: `join.html` catches
-   the failed request and falls straight back to the plain Discord webhook (no Approve/Reject
-   buttons on that submission, but it still reaches staff).
+   a domain you own). Each time it changes, update the base URL in **two** places:
+   - `Website/join.html` → `PILOT_APP_API_URL` (the new URL + `/pilot-application`)
+   - `Route Network Database/js/config.js` → `DISCORD_BOT_API_URL` (just the new base URL,
+     no path — `js/crew-typerating.js` appends `/typerating-request` and
+     `/typerating-assign-examiner` itself)
+
+   `PILOT_APP_API_KEY` (website) and `DISCORD_BOT_API_KEY` (Crew Center) both need to match
+   `PILOT_APP_API_KEY` in the bot's own env — same shared key for every endpoint, only needs
+   setting once, doesn't change on restart. Push both after updating — Netlify redeploys each
+   independently.
+4. If you forget to update either, or the bot is mid-restart, nothing breaks: both sites
+   catch the failed request and fall back gracefully (the website posts straight to a plain
+   Discord webhook instead; the Crew Center just proceeds without a Discord thread, or
+   without the examiner added to one — the actual request/approval/assignment still goes
+   through in Supabase either way).
 
 Optional upgrade later, if you end up owning a domain: point it at a **named** Cloudflare
 Tunnel instead of a quick one, so the URL stays fixed across restarts. Ask Claude to set that

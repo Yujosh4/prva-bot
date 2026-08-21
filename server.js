@@ -10,8 +10,8 @@
 // just a forum post staff can delete — same exposure the plain webhook already had.
 
 import express from "express";
-import { EmbedBuilder } from "discord.js";
-import { PORT, STAFF_ROLE_ID, PILOT_APP_API_KEY } from "./env.js";
+import { ChannelType, EmbedBuilder } from "discord.js";
+import { PORT, STAFF_ROLE_ID, PILOT_APP_API_KEY, TYPE_RATING_CHANNEL_ID } from "./env.js";
 import { PRVA_RED, buildDecisionRow, createForumThread } from "./forumPosts.js";
 
 const PILOT_TAG_NAME = "Pilot Application";
@@ -108,6 +108,107 @@ export function startPilotApplicationServer(client) {
       res.json({ ok: true, threadId: thread.id });
     } catch (err) {
       console.error("Failed to create pilot application thread:", err);
+      res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  // Type Rating requests, called directly from the Crew Center the same
+  // way join.html calls /pilot-application above -- but this one creates
+  // a real PRIVATE thread (ChannelType.PrivateThread) on a plain text
+  // channel rather than a forum post, since the pilot+examiner
+  // conversation here shouldn't be visible to everyone who can see
+  // #pilot-applications. invitable: false means only staff (Manage
+  // Threads permission) can add further members -- the examiner gets
+  // added explicitly via /typerating-assign-examiner below, not by the
+  // pilot inviting them.
+  app.post("/typerating-request", async (req, res) => {
+    if (!PILOT_APP_API_KEY) return res.status(503).json({ ok: false, error: "not_configured" });
+    if (req.headers["x-prva-key"] !== PILOT_APP_API_KEY) return res.status(401).json({ ok: false, error: "unauthorized" });
+
+    const ip = (req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress || "unknown").trim();
+    const last = lastRequestByIp.get("tr_" + ip) || 0;
+    if (Date.now() - last < RATE_LIMIT_WINDOW_MS) return res.status(429).json({ ok: false, error: "rate_limited" });
+    lastRequestByIp.set("tr_" + ip, Date.now());
+
+    if (!client.isReady()) return res.status(503).json({ ok: false, error: "bot_not_ready" });
+    if (!TYPE_RATING_CHANNEL_ID) return res.status(503).json({ ok: false, error: "not_configured" });
+
+    const { pilotName, pilotDiscordId, aircraftIcao, aircraftName, rankName, totalHours, ifcUsername } = req.body || {};
+    if (!pilotDiscordId || !aircraftIcao) {
+      return res.status(400).json({ ok: false, error: "missing_fields" });
+    }
+
+    try {
+      const channel = await client.channels.fetch(TYPE_RATING_CHANNEL_ID);
+      if (!channel || (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.GuildAnnouncement)) {
+        return res.status(500).json({ ok: false, error: "channel_not_text" });
+      }
+
+      const thread = await channel.threads.create({
+        name: `${clean(pilotName, 40)} — ${clean(aircraftIcao, 10)} Type Rating`.slice(0, 100),
+        type: ChannelType.PrivateThread,
+        invitable: false,
+        reason: "Type Rating request"
+      });
+
+      await thread.members.add(pilotDiscordId).catch((err) => {
+        console.warn("Could not add pilot to Type Rating thread (wrong/invalid Discord id?):", err.message);
+      });
+
+      const embed = new EmbedBuilder()
+        .setColor(PRVA_RED)
+        .setTitle("Type Rating Request")
+        .addFields(
+          { name: "Pilot", value: `<@${pilotDiscordId}> (${clean(pilotName, 100)})`, inline: true },
+          { name: "IFC Username", value: clean(ifcUsername, 100), inline: true },
+          { name: "Rank", value: clean(rankName, 60), inline: true },
+          { name: "Total Hours", value: clean(totalHours != null ? String(totalHours) : null, 20), inline: true },
+          { name: "Aircraft", value: `${clean(aircraftIcao, 10)} — ${clean(aircraftName, 80)}`, inline: true }
+        )
+        .setTimestamp(new Date());
+
+      await thread.send({
+        content: `<@&${STAFF_ROLE_ID}> New Type Rating request from <@${pilotDiscordId}>.`,
+        embeds: [embed]
+      });
+
+      res.json({ ok: true, threadId: thread.id });
+    } catch (err) {
+      console.error("Failed to create Type Rating thread:", err);
+      res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  // Adds the assigned checkride examiner to an already-created Type
+  // Rating thread. Called from the Crew Center's staff admin page right
+  // after "Assign Examiner" is pressed there -- the actual assignment
+  // record lives in Supabase (pilot_type_ratings.examiner_discord_id),
+  // this just gets the examiner into the conversation.
+  app.post("/typerating-assign-examiner", async (req, res) => {
+    if (!PILOT_APP_API_KEY) return res.status(503).json({ ok: false, error: "not_configured" });
+    if (req.headers["x-prva-key"] !== PILOT_APP_API_KEY) return res.status(401).json({ ok: false, error: "unauthorized" });
+    if (!client.isReady()) return res.status(503).json({ ok: false, error: "bot_not_ready" });
+
+    const { threadId, examinerDiscordId } = req.body || {};
+    if (!threadId || !examinerDiscordId) {
+      return res.status(400).json({ ok: false, error: "missing_fields" });
+    }
+
+    try {
+      const thread = await client.channels.fetch(threadId).catch(() => null);
+      if (!thread || !thread.isThread()) {
+        return res.status(404).json({ ok: false, error: "thread_not_found" });
+      }
+
+      await thread.members.add(examinerDiscordId);
+      await thread.send(
+        `<@${examinerDiscordId}> has been assigned as the checkride examiner for this request. ` +
+          "Coordinate your schedule here, then log the result back in the Crew Center once it's flown."
+      );
+
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("Failed to add examiner to Type Rating thread:", err);
       res.status(500).json({ ok: false, error: "internal_error" });
     }
   });

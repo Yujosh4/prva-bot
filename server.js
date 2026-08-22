@@ -183,13 +183,18 @@ export function startPilotApplicationServer(client) {
   // Rating thread. Called from the Crew Center's staff admin page right
   // after "Assign Examiner" is pressed there -- the actual assignment
   // record lives in Supabase (pilot_type_ratings.examiner_discord_id),
-  // this just gets the examiner into the conversation.
+  // this just gets the examiner into the conversation and posts a card
+  // about who they are, since a bare Discord ID/mention tells the pilot
+  // nothing about who's about to check them out. examinerName/
+  // examinerIfc/examinerPosition are all optional -- staff types them in
+  // by hand at assign time (there's no table linking a Discord ID to an
+  // IFC username or VA position), so the card only shows what's given.
   app.post("/typerating-assign-examiner", async (req, res) => {
     if (!PILOT_APP_API_KEY) return res.status(503).json({ ok: false, error: "not_configured" });
     if (req.headers["x-prva-key"] !== PILOT_APP_API_KEY) return res.status(401).json({ ok: false, error: "unauthorized" });
     if (!client.isReady()) return res.status(503).json({ ok: false, error: "bot_not_ready" });
 
-    const { threadId, examinerDiscordId } = req.body || {};
+    const { threadId, examinerDiscordId, examinerName, examinerIfc, examinerPosition } = req.body || {};
     if (!threadId || !examinerDiscordId) {
       return res.status(400).json({ ok: false, error: "missing_fields" });
     }
@@ -217,13 +222,29 @@ export function startPilotApplicationServer(client) {
         console.warn("Could not add examiner to Type Rating thread:", addError);
       }
 
-      await thread.send(
-        addResult
-          ? `<@${examinerDiscordId}> has been assigned as the checkride examiner for this request. ` +
-              "Coordinate your schedule here, then log the result back in the Crew Center once it's flown."
-          : `Examiner assigned: \`${examinerDiscordId}\` (couldn't add them to this thread automatically -- ` +
-              `Discord said: "${addError}". Check the ID is correct and that they're in this server, or add them manually).`
-      );
+      const embed = new EmbedBuilder()
+        .setColor(PRVA_RED)
+        .setTitle("Checkride Examiner Assigned")
+        .setDescription(
+          `<@${examinerDiscordId}> has been assigned as the checkride examiner for this request. ` +
+            "Coordinate a date/time here, then log the result in the Crew Center once it's flown (all checkrides fly on **Training Server**)."
+        )
+        .addFields(
+          { name: "Examiner", value: clean(examinerName, 100), inline: true },
+          { name: "IFC Username", value: clean(examinerIfc, 100), inline: true },
+          { name: "Position", value: clean(examinerPosition, 100), inline: true }
+        )
+        .setTimestamp(new Date());
+
+      if (!addResult) {
+        embed.addFields({
+          name: "⚠️ Couldn't add to thread automatically",
+          value: `Discord said: "${addError}". Check the ID is correct and that they're in this server, or add them manually.`,
+          inline: false,
+        });
+      }
+
+      await thread.send({ content: `<@${examinerDiscordId}>`, embeds: [embed] });
 
       res.json({ ok: true, memberAdded: addResult, addError });
     } catch (err) {

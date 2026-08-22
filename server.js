@@ -191,6 +191,7 @@ export function startPilotApplicationServer(client) {
       const embed = new EmbedBuilder()
         .setColor(PRVA_RED)
         .setTitle("Type Rating Request")
+        .setDescription("Please wait until an examiner has approved your request. You'll be notified right here once there's an update.")
         .addFields(
           { name: "Pilot", value: `<@${pilotDiscordId}> (${clean(pilotName, 100)})`, inline: true },
           { name: "IFC Username", value: clean(ifcUsername, 100), inline: true },
@@ -223,6 +224,69 @@ export function startPilotApplicationServer(client) {
   // by hand at assign time (there's no table linking a Discord ID to an
   // IFC username or VA position), so this is the only way the card gets
   // real info instead of a bare mention.
+  // Posted when staff presses Approve on the review queue -- the pilot
+  // otherwise has no way to know their request moved forward until an
+  // examiner shows up in the thread, which could be a while.
+  app.post("/typerating-approved", async (req, res) => {
+    if (!PILOT_APP_API_KEY) return res.status(503).json({ ok: false, error: "not_configured" });
+    if (req.headers["x-prva-key"] !== PILOT_APP_API_KEY) return res.status(401).json({ ok: false, error: "unauthorized" });
+    if (!client.isReady()) return res.status(503).json({ ok: false, error: "bot_not_ready" });
+
+    const { threadId, pilotDiscordId } = req.body || {};
+    if (!threadId || !pilotDiscordId) return res.status(400).json({ ok: false, error: "missing_fields" });
+
+    try {
+      const thread = await client.channels.fetch(threadId).catch(() => null);
+      if (!thread || !thread.isThread()) return res.status(404).json({ ok: false, error: "thread_not_found" });
+
+      const embed = new EmbedBuilder()
+        .setColor(0x2ecc71)
+        .setTitle("✅ Request Approved")
+        .setDescription(
+          `<@${pilotDiscordId}> your Type Rating request has been approved. Now waiting for an examiner to be ` +
+            "assigned -- you'll be notified right here once that happens."
+        )
+        .setTimestamp(new Date());
+
+      await thread.send({ content: `<@${pilotDiscordId}>`, embeds: [embed] });
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("Failed to post Type Rating approval:", err);
+      res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  // Posted for both a first-stage Reject and a later-stage Cancel Request
+  // (crew-typerating-admin.js sets the same 'rejected' status either way,
+  // always with a required reason) -- same notification either way, since
+  // from the pilot's side both mean "this request stopped moving forward."
+  app.post("/typerating-rejected", async (req, res) => {
+    if (!PILOT_APP_API_KEY) return res.status(503).json({ ok: false, error: "not_configured" });
+    if (req.headers["x-prva-key"] !== PILOT_APP_API_KEY) return res.status(401).json({ ok: false, error: "unauthorized" });
+    if (!client.isReady()) return res.status(503).json({ ok: false, error: "bot_not_ready" });
+
+    const { threadId, pilotDiscordId, reason } = req.body || {};
+    if (!threadId || !pilotDiscordId || !reason) return res.status(400).json({ ok: false, error: "missing_fields" });
+
+    try {
+      const thread = await client.channels.fetch(threadId).catch(() => null);
+      if (!thread || !thread.isThread()) return res.status(404).json({ ok: false, error: "thread_not_found" });
+
+      const embed = new EmbedBuilder()
+        .setColor(0xe74c3c)
+        .setTitle("❌ Request Rejected")
+        .setDescription(`<@${pilotDiscordId}> your Type Rating request was not approved. You're welcome to submit a new request any time.`)
+        .addFields({ name: "Reason", value: clean(reason, 1000) })
+        .setTimestamp(new Date());
+
+      await thread.send({ content: `<@${pilotDiscordId}>`, embeds: [embed] });
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("Failed to post Type Rating rejection:", err);
+      res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
   app.post("/typerating-assign-examiner", async (req, res) => {
     if (!PILOT_APP_API_KEY) return res.status(503).json({ ok: false, error: "not_configured" });
     if (req.headers["x-prva-key"] !== PILOT_APP_API_KEY) return res.status(401).json({ ok: false, error: "unauthorized" });

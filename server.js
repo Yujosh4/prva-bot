@@ -11,7 +11,7 @@
 
 import express from "express";
 import { ChannelType, EmbedBuilder } from "discord.js";
-import { PORT, STAFF_ROLE_ID, PILOT_APP_API_KEY, TYPE_RATING_CHANNEL_ID, TYPE_RATING_EXAMINER_ROLE_ID } from "./env.js";
+import { PORT, STAFF_ROLE_ID, PILOT_APP_API_KEY, TYPE_RATING_CHANNEL_ID, TYPE_RATING_EXAMINER_ROLE_ID, AIRCRAFT_SPOTLIGHT_CHANNEL_ID } from "./env.js";
 import { PRVA_RED, buildDecisionRow, createForumThread } from "./forumPosts.js";
 
 const PILOT_TAG_NAME = "Pilot Application";
@@ -529,6 +529,47 @@ export function startPilotApplicationServer(client) {
       res.json({ ok: true, dmSent, dmError });
     } catch (err) {
       console.error("Failed to DM Type Rating revocation:", err);
+      res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  // Posted once staff approves a Top Shots submission -- deliberately
+  // not on raw submission, so #aircraft-spotlight only ever shows
+  // reviewed content, matching the same approval gate the Crew Center
+  // page itself enforces (nothing pilot-submitted is publicly visible
+  // until staff acts on it).
+  app.post("/photo-approved", async (req, res) => {
+    if (!PILOT_APP_API_KEY) return res.status(503).json({ ok: false, error: "not_configured" });
+    if (req.headers["x-prva-key"] !== PILOT_APP_API_KEY) return res.status(401).json({ ok: false, error: "unauthorized" });
+    if (!client.isReady()) return res.status(503).json({ ok: false, error: "bot_not_ready" });
+    if (!AIRCRAFT_SPOTLIGHT_CHANNEL_ID) return res.status(503).json({ ok: false, error: "not_configured" });
+
+    const { imageUrl, caption, aircraftIcao, pilotName, pilotIfc } = req.body || {};
+    if (!imageUrl) return res.status(400).json({ ok: false, error: "missing_fields" });
+
+    try {
+      const channel = await client.channels.fetch(AIRCRAFT_SPOTLIGHT_CHANNEL_ID);
+      if (!channel || (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.GuildAnnouncement)) {
+        return res.status(500).json({ ok: false, error: "channel_not_text" });
+      }
+
+      const embed = new EmbedBuilder()
+        .setColor(PRVA_RED)
+        .setTitle("📸 New Top Shots Submission")
+        .setImage(imageUrl)
+        .addFields(
+          { name: "Pilot", value: clean(pilotName, 100), inline: true },
+          { name: "IFC Username", value: clean(pilotIfc, 100), inline: true },
+          { name: "Aircraft", value: clean(aircraftIcao, 20), inline: true }
+        )
+        .setFooter({ text: "Vote for it in the Crew Center's Top Shots page." })
+        .setTimestamp(new Date());
+      if (caption) embed.setDescription(clean(caption, 500));
+
+      await channel.send({ embeds: [embed] });
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("Failed to post Top Shots approval:", err);
       res.status(500).json({ ok: false, error: "internal_error" });
     }
   });

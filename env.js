@@ -7,6 +7,7 @@ export const {
   PILOT_APPLICATIONS_FORUM_CHANNEL_ID,
   TYPE_RATING_CHANNEL_ID,
   TYPE_RATING_EXAMINER_ROLE_ID,
+  AIRCRAFT_SPOTLIGHT_CHANNEL_ID,
   STAFF_ROLE_ID,
   PILOT_APP_API_KEY,
   ADMIN_USER_ID,
@@ -36,6 +37,13 @@ if (!TYPE_RATING_EXAMINER_ROLE_ID) {
   console.warn(
     "TYPE_RATING_EXAMINER_ROLE_ID is not set — new Type Rating requests will ping STAFF_ROLE_ID instead " +
       "(everything still works, just pings the wrong role)."
+  );
+}
+
+if (!AIRCRAFT_SPOTLIGHT_CHANNEL_ID) {
+  console.warn(
+    "AIRCRAFT_SPOTLIGHT_CHANNEL_ID is not set — the /photo-approved HTTP endpoint will refuse every request " +
+      "until it is (Top Shots approvals just won't post to Discord, everything else still works)."
   );
 }
 

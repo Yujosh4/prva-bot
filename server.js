@@ -265,7 +265,7 @@ export function startPilotApplicationServer(client) {
 
     const {
       threadId, pilotDiscordId, examinerDiscordId, pilotName, examinerName, examinerPosition,
-      aircraftIcao, aircraftName, scheduledAt,
+      aircraftIcao, aircraftName, scheduledAt, isReschedule,
     } = req.body || {};
     if (!threadId || !pilotDiscordId || !examinerDiscordId || !scheduledAt) {
       return res.status(400).json({ ok: false, error: "missing_fields" });
@@ -283,7 +283,7 @@ export function startPilotApplicationServer(client) {
       const unixSeconds = Math.floor(new Date(scheduledAt).getTime() / 1000);
       const embed = new EmbedBuilder()
         .setColor(PRVA_RED)
-        .setTitle("Checkride Scheduled")
+        .setTitle(isReschedule ? "Checkride Rescheduled" : "Checkride Scheduled")
         .addFields(
           { name: "Aircraft", value: `${clean(aircraftIcao, 10)} — ${clean(aircraftName, 80)}`, inline: true },
           { name: "Server", value: "Training Server", inline: true },
@@ -298,7 +298,7 @@ export function startPilotApplicationServer(client) {
         .setTimestamp(new Date());
 
       await thread.send({
-        content: `<@${pilotDiscordId}> <@${examinerDiscordId}> your checkride has been scheduled — see the details below.`,
+        content: `<@${pilotDiscordId}> <@${examinerDiscordId}> your checkride has been ${isReschedule ? "rescheduled" : "scheduled"} — see the details below.`,
         embeds: [embed],
       });
 

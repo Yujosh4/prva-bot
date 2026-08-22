@@ -406,6 +406,43 @@ export function startPilotApplicationServer(client) {
     }
   });
 
+  // Posted when the examiner presses Pass or Fail on the review queue --
+  // previously the pilot's only way to find out was checking the Crew
+  // Center themselves, with nothing telling them to look.
+  app.post("/typerating-result", async (req, res) => {
+    if (!PILOT_APP_API_KEY) return res.status(503).json({ ok: false, error: "not_configured" });
+    if (req.headers["x-prva-key"] !== PILOT_APP_API_KEY) return res.status(401).json({ ok: false, error: "unauthorized" });
+    if (!client.isReady()) return res.status(503).json({ ok: false, error: "bot_not_ready" });
+
+    const { threadId, pilotDiscordId, passed, remarks, aircraftIcao, aircraftName } = req.body || {};
+    if (!threadId || !pilotDiscordId || typeof passed !== "boolean" || !remarks) {
+      return res.status(400).json({ ok: false, error: "missing_fields" });
+    }
+
+    try {
+      const thread = await client.channels.fetch(threadId).catch(() => null);
+      if (!thread || !thread.isThread()) return res.status(404).json({ ok: false, error: "thread_not_found" });
+
+      const embed = new EmbedBuilder()
+        .setColor(passed ? 0x2ecc71 : 0xe74c3c)
+        .setTitle(passed ? "🎓 Checkride Passed" : "Checkride Failed")
+        .setDescription(
+          passed
+            ? `<@${pilotDiscordId}> congratulations, you passed! Your **${clean(aircraftIcao, 10)} — ${clean(aircraftName, 80)}** ` +
+                "badge is now live in the Crew Center."
+            : `<@${pilotDiscordId}> this checkride wasn't a pass. You're welcome to submit a new Type Rating request whenever you're ready.`
+        )
+        .addFields({ name: "Examiner Remarks", value: clean(remarks, 1000) })
+        .setTimestamp(new Date());
+
+      await thread.send({ content: `<@${pilotDiscordId}>`, embeds: [embed] });
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("Failed to post Type Rating result:", err);
+      res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
   app.listen(PORT, () => {
     console.log(`Pilot application HTTP server listening on port ${PORT}.`);
   });

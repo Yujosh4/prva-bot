@@ -443,6 +443,78 @@ export function startPilotApplicationServer(client) {
     }
   });
 
+  // Suspend/revoke DM the pilot directly rather than posting to the
+  // original request thread -- that thread could be long-archived by
+  // the time a real incident happens, and a disciplinary action is
+  // usually unrelated to the original checkride conversation anyway.
+  // Same client.users.fetch(...).send(...) pattern index.js's own
+  // DECISION_COPY flow already uses for important outcomes. Best-effort:
+  // a DM can fail (pilot has them off, shares no server with the bot),
+  // which never blocks the underlying Supabase action either way.
+  app.post("/typerating-suspended", async (req, res) => {
+    if (!PILOT_APP_API_KEY) return res.status(503).json({ ok: false, error: "not_configured" });
+    if (req.headers["x-prva-key"] !== PILOT_APP_API_KEY) return res.status(401).json({ ok: false, error: "unauthorized" });
+    if (!client.isReady()) return res.status(503).json({ ok: false, error: "bot_not_ready" });
+
+    const { pilotDiscordId, reason, suspendedUntil, aircraftIcao, aircraftName } = req.body || {};
+    if (!pilotDiscordId || !reason || !suspendedUntil) {
+      return res.status(400).json({ ok: false, error: "missing_fields" });
+    }
+
+    try {
+      const unixSeconds = Math.floor(new Date(suspendedUntil).getTime() / 1000);
+      const embed = new EmbedBuilder()
+        .setColor(0xf1c40f)
+        .setTitle("⚠️ Type Rating Suspended")
+        .setDescription(
+          `Your **${clean(aircraftIcao, 10)} — ${clean(aircraftName, 80)}** type rating has been suspended ` +
+            `until <t:${unixSeconds}:F> (<t:${unixSeconds}:R>). It's automatically restored once that time passes.`
+        )
+        .addFields({ name: "Reason", value: clean(reason, 1000) })
+        .setTimestamp(new Date());
+
+      const user = await client.users.fetch(pilotDiscordId).catch(() => null);
+      const dmSent = user ? await user.send({ embeds: [embed] }).then(() => true).catch(() => false) : false;
+
+      res.json({ ok: true, dmSent });
+    } catch (err) {
+      console.error("Failed to DM Type Rating suspension:", err);
+      res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  app.post("/typerating-revoked", async (req, res) => {
+    if (!PILOT_APP_API_KEY) return res.status(503).json({ ok: false, error: "not_configured" });
+    if (req.headers["x-prva-key"] !== PILOT_APP_API_KEY) return res.status(401).json({ ok: false, error: "unauthorized" });
+    if (!client.isReady()) return res.status(503).json({ ok: false, error: "bot_not_ready" });
+
+    const { pilotDiscordId, reason, cooldownUntil, aircraftIcao, aircraftName } = req.body || {};
+    if (!pilotDiscordId || !reason || !cooldownUntil) {
+      return res.status(400).json({ ok: false, error: "missing_fields" });
+    }
+
+    try {
+      const unixSeconds = Math.floor(new Date(cooldownUntil).getTime() / 1000);
+      const embed = new EmbedBuilder()
+        .setColor(0xe74c3c)
+        .setTitle("🚫 Type Rating Revoked")
+        .setDescription(
+          `Your **${clean(aircraftIcao, 10)} — ${clean(aircraftName, 80)}** type rating has been revoked. ` +
+            `You can submit a new request for it starting <t:${unixSeconds}:F> (<t:${unixSeconds}:R>).`
+        )
+        .addFields({ name: "Reason", value: clean(reason, 1000) })
+        .setTimestamp(new Date());
+
+      const user = await client.users.fetch(pilotDiscordId).catch(() => null);
+      const dmSent = user ? await user.send({ embeds: [embed] }).then(() => true).catch(() => false) : false;
+
+      res.json({ ok: true, dmSent });
+    } catch (err) {
+      console.error("Failed to DM Type Rating revocation:", err);
+      res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
   app.listen(PORT, () => {
     console.log(`Pilot application HTTP server listening on port ${PORT}.`);
   });

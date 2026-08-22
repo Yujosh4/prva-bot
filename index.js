@@ -52,7 +52,14 @@ import { startPilotApplicationServer } from "./server.js";
 import { startCloudflareTunnel } from "./tunnel.js";
 import { startCheckrideReminderLoop } from "./reminders.js";
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+// GuildMembers is a privileged intent -- must also be toggled on in the
+// Developer Portal (Bot -> Privileged Gateway Intents -> Server Members
+// Intent), or the bot fails to log in entirely, not just this one
+// feature. Needed so server.js can fetch who actually holds the Type
+// Rating Examiner role and add them to a new request's thread as real
+// members (a role @mention alone doesn't add anyone to a private thread
+// -- see server.js's /typerating-request).
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 
 const MM_TAG_NAME = "Mabuhay Miles";
 

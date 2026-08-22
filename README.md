@@ -67,8 +67,12 @@ website to reach (see **Website wiring**). See **Hosting** below.
 2. Go to **Bot** in the sidebar → **Reset Token** → copy the token. Treat this like a
    password — never paste it in chat, a commit, or anywhere public. You'll paste it into
    your host's environment variables (step 4).
-3. No privileged intents need to be toggled on for this bot — it only uses slash commands
-   and buttons, not message content.
+3. Toggle on **Server Members Intent** under **Privileged Gateway Intents** (same Bot page) --
+   needed so a new Type Rating request can add every holder of the Type Rating Examiner role
+   to the request's thread as real members (see step 6 below, `TYPE_RATING_EXAMINER_ROLE_ID`).
+   Without this toggled on here, the bot fails to log in entirely once that intent is added
+   to the code (`index.js`), not just that one feature. Message Content intent still isn't
+   needed -- this bot never reads message text, only slash commands and buttons.
 4. Go to **OAuth2 → URL Generator**. Under **Scopes**, check `bot` and
    `applications.commands`. Under **Bot Permissions**, check:
    - View Channels
@@ -104,8 +108,11 @@ website to reach (see **Website wiring**). See **Hosting** below.
      (`PILOT_APPLICATIONS_FORUM_CHANNEL_ID`)
    - The `#type-rating` text channel → **Channel ID** (`TYPE_RATING_CHANNEL_ID`)
    - Your "Type Rating Examiner (TRE)" role (Server Settings → Roles → right-click it) →
-     **Role ID** (`TYPE_RATING_EXAMINER_ROLE_ID`) -- optional, falls back to `STAFF_ROLE_ID`
-     if unset
+     **Role ID** (`TYPE_RATING_EXAMINER_ROLE_ID`) -- pings this role (falls back to
+     `STAFF_ROLE_ID` if unset) *and* adds every member who holds it to a new request's
+     thread as a real member -- a role @mention alone doesn't add anyone to a private
+     thread, only explicit membership or Manage Threads does, and even Manage Threads
+     doesn't surface it in someone's sidebar the way real membership does
    - Your Staff role (Server Settings → Roles → right-click it) → **Role ID**
      (`STAFF_ROLE_ID`)
    - Your bot's application → **Application ID**, on the General Information page in the

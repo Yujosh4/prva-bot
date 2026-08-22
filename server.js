@@ -155,6 +155,39 @@ export function startPilotApplicationServer(client) {
         console.warn("Could not add pilot to Type Rating thread (wrong/invalid Discord id?):", err.message);
       });
 
+      // A role @mention (below) notifies people, but doesn't add anyone to
+      // a PRIVATE thread -- only explicit membership or the Manage Threads
+      // permission gives visibility, and even Manage Threads doesn't push
+      // it into someone's sidebar/joined-threads the way real membership
+      // does. So every actual holder of the examiner role gets added here
+      // as a real member too, best-effort -- one member failing (e.g. they
+      // share no server with the bot, which shouldn't happen for someone
+      // with a role in this server, but just in case) doesn't block the rest.
+      if (TYPE_RATING_EXAMINER_ROLE_ID) {
+        try {
+          // role.members reads off the guild's member cache, which isn't
+          // guaranteed populated just because the intent is on -- an
+          // explicit fetch() (a real REST call) is what actually fills it.
+          await channel.guild.members.fetch();
+          const role = channel.guild.roles.cache.get(TYPE_RATING_EXAMINER_ROLE_ID) || (await channel.guild.roles.fetch(TYPE_RATING_EXAMINER_ROLE_ID));
+          if (role) {
+            await Promise.all(
+              role.members
+                .filter((m) => !m.user.bot)
+                .map((m) =>
+                  thread.members.add(m.id).catch((err) => {
+                    console.warn(`Could not add TRE role member ${m.id} to Type Rating thread:`, err.message);
+                  })
+                )
+            );
+          } else {
+            console.warn("TYPE_RATING_EXAMINER_ROLE_ID is set but that role wasn't found in the server.");
+          }
+        } catch (err) {
+          console.warn("Could not add Type Rating Examiner role members to thread:", err.message);
+        }
+      }
+
       const embed = new EmbedBuilder()
         .setColor(PRVA_RED)
         .setTitle("Type Rating Request")

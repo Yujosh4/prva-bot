@@ -8,6 +8,7 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
     "cloudflared": "^0.7.3",
     "discord.js": "^14.15.3",
     "dotenv": "^16.4.5",

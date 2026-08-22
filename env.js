@@ -8,7 +8,9 @@ export const {
   TYPE_RATING_CHANNEL_ID,
   STAFF_ROLE_ID,
   PILOT_APP_API_KEY,
-  ADMIN_USER_ID
+  ADMIN_USER_ID,
+  SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY
 } = process.env;
 
 export const PORT = process.env.PORT || process.env.SERVER_PORT || "3000";
@@ -45,5 +47,13 @@ if (!PILOT_APP_API_KEY) {
 if (!ADMIN_USER_ID) {
   console.warn(
     "ADMIN_USER_ID is not set — the Cloudflare Tunnel URL will only be logged to the console, not DMed to you."
+  );
+}
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  console.warn(
+    "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not both set — checkride \"starting now\" reminders are " +
+      "disabled (everything else still works). SUPABASE_SERVICE_ROLE_KEY is a real secret (bypasses RLS) -- " +
+      "Project Settings -> API -> service_role key, set only here in the bot's own env, never in a website config."
   );
 }

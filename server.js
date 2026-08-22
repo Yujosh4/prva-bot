@@ -265,9 +265,9 @@ export function startPilotApplicationServer(client) {
 
     const {
       threadId, pilotDiscordId, examinerDiscordId, pilotName, examinerName, examinerPosition,
-      aircraftIcao, aircraftName, scheduledDate, scheduledTime,
+      aircraftIcao, aircraftName, scheduledAt,
     } = req.body || {};
-    if (!threadId || !pilotDiscordId || !examinerDiscordId || !scheduledDate) {
+    if (!threadId || !pilotDiscordId || !examinerDiscordId || !scheduledAt) {
       return res.status(400).json({ ok: false, error: "missing_fields" });
     }
 
@@ -277,14 +277,17 @@ export function startPilotApplicationServer(client) {
         return res.status(404).json({ ok: false, error: "thread_not_found" });
       }
 
+      // <t:...:F>/<t:...:R> are Discord's own timestamp markdown -- every
+      // viewer sees this in their own local time and as a live-updating
+      // countdown, with no per-user timezone tracking needed on our end.
+      const unixSeconds = Math.floor(new Date(scheduledAt).getTime() / 1000);
       const embed = new EmbedBuilder()
         .setColor(PRVA_RED)
         .setTitle("Checkride Scheduled")
         .addFields(
           { name: "Aircraft", value: `${clean(aircraftIcao, 10)} — ${clean(aircraftName, 80)}`, inline: true },
           { name: "Server", value: "Training Server", inline: true },
-          { name: "Date", value: clean(scheduledDate, 20), inline: true },
-          { name: "Time", value: clean(scheduledTime, 20), inline: true },
+          { name: "When", value: `<t:${unixSeconds}:F> (<t:${unixSeconds}:R>)`, inline: false },
           { name: "Pilot", value: `<@${pilotDiscordId}> (${clean(pilotName, 100)})`, inline: true },
           {
             name: "Examiner",

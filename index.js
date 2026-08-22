@@ -50,6 +50,7 @@ import { DISCORD_TOKEN, DISCORD_CLIENT_ID, GUILD_ID, PILOT_APPLICATIONS_FORUM_CH
 import { PRVA_RED, isStaffMember, buildDecisionRow, createForumThread, getForumChannel, findTagId } from "./forumPosts.js";
 import { startPilotApplicationServer } from "./server.js";
 import { startCloudflareTunnel } from "./tunnel.js";
+import { startCheckrideReminderLoop } from "./reminders.js";
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -101,6 +102,7 @@ client.once(Events.ClientReady, async (c) => {
   }
   await registerCommands();
   startCloudflareTunnel(c);
+  startCheckrideReminderLoop(c);
 });
 
 async function createMmForumPost(interaction, kind) {

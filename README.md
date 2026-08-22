@@ -38,12 +38,23 @@ which opens a real **private thread** on a plain text channel (not a forum post 
 flows above — a checkride conversation between one pilot and one examiner shouldn't be
 visible to everyone who can see `#pilot-applications`) and adds the pilot to it. Everything
 else — approve/reject, assigning an examiner, scheduling, and the pass/fail result — happens
-in the Crew Center itself, not with Discord buttons; the only other thing this bot does for
-this flow is add the assigned examiner to that same thread once staff presses "Assign
-Examiner" there, via `/typerating-assign-examiner`. If either endpoint is unreachable, the
-Crew Center request/assignment still goes through — it just proceeds without a thread (or
-without the examiner added to one), same "never block the real action on the bot being up"
-fallback philosophy as the pilot-application webhook fallback below.
+in the Crew Center itself, not with Discord buttons; the other things this bot does for this
+flow are add the assigned examiner to that same thread once staff presses "Assign Examiner"
+(`/typerating-assign-examiner`), and post the confirmed date/time when staff presses "Set
+Schedule" (`/typerating-schedule`). If any of these endpoints is unreachable, the Crew Center
+request/assignment/schedule still goes through — it just proceeds without a thread (or without
+Discord being notified), same "never block the real action on the bot being up" fallback
+philosophy as the pilot-application webhook fallback below.
+
+**Checkride start reminders:** separately from the three endpoints above, `reminders.js`
+polls Supabase directly once a minute (needs `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` set —
+see `.env.example`) for any scheduled checkride whose time has arrived, and pings the pilot +
+examiner in their thread. This is a poll against the DB's own state rather than an in-memory
+timer set when the checkride is booked, specifically so a Wispbyte restart between now and the
+checkride doesn't silently lose the reminder — it just resumes on the next tick. Staff enter
+the checkride time as UTC/Zulu in the Crew Center (labelled there); the Discord messages use
+Discord's own `<t:...>` timestamp markdown so everyone sees it in their own local time
+automatically, no per-user timezone tracking needed.
 
 This is a standalone Node process — it can't run on Netlify (that's static hosting only). It
 needs somewhere that stays online 24/7. It also now needs an exposed HTTP port for the

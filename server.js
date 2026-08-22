@@ -474,9 +474,18 @@ export function startPilotApplicationServer(client) {
         .setTimestamp(new Date());
 
       const user = await client.users.fetch(pilotDiscordId).catch(() => null);
-      const dmSent = user ? await user.send({ embeds: [embed] }).then(() => true).catch(() => false) : false;
+      let dmSent = false;
+      let dmError = user ? null : "user_not_found";
+      if (user) {
+        try {
+          await user.send({ embeds: [embed] });
+          dmSent = true;
+        } catch (err) {
+          dmError = err?.rawError?.message || err?.message || "unknown error";
+        }
+      }
 
-      res.json({ ok: true, dmSent });
+      res.json({ ok: true, dmSent, dmError });
     } catch (err) {
       console.error("Failed to DM Type Rating suspension:", err);
       res.status(500).json({ ok: false, error: "internal_error" });
@@ -506,9 +515,18 @@ export function startPilotApplicationServer(client) {
         .setTimestamp(new Date());
 
       const user = await client.users.fetch(pilotDiscordId).catch(() => null);
-      const dmSent = user ? await user.send({ embeds: [embed] }).then(() => true).catch(() => false) : false;
+      let dmSent = false;
+      let dmError = user ? null : "user_not_found";
+      if (user) {
+        try {
+          await user.send({ embeds: [embed] });
+          dmSent = true;
+        } catch (err) {
+          dmError = err?.rawError?.message || err?.message || "unknown error";
+        }
+      }
 
-      res.json({ ok: true, dmSent });
+      res.json({ ok: true, dmSent, dmError });
     } catch (err) {
       console.error("Failed to DM Type Rating revocation:", err);
       res.status(500).json({ ok: false, error: "internal_error" });

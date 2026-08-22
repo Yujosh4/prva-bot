@@ -569,8 +569,9 @@ export function startPilotApplicationServer(client) {
       await channel.send({ embeds: [embed] });
       res.json({ ok: true });
     } catch (err) {
-      console.error("Failed to post Top Shots approval:", err);
-      res.status(500).json({ ok: false, error: "internal_error" });
+      const detail = err?.rawError?.message || err?.message || "unknown error";
+      console.error("Failed to post Top Shots approval:", detail);
+      res.status(500).json({ ok: false, error: "internal_error", detail });
     }
   });
 

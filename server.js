@@ -228,7 +228,7 @@ export function startPilotApplicationServer(client) {
         .setTitle("Checkride Examiner Assigned")
         .setDescription(
           `<@${examinerDiscordId}> has been assigned as the checkride examiner for this request. ` +
-            "Coordinate a date/time here, then log the result in the Crew Center once it's flown (all checkrides fly on **Training Server**)."
+            "Coordinate a date/time here (all checkrides fly on **Training Server**)."
         )
         .addFields(
           { name: "Examiner", value: clean(examinerName, 100), inline: true },
@@ -250,6 +250,58 @@ export function startPilotApplicationServer(client) {
       res.json({ ok: true, memberAdded: addResult, addError });
     } catch (err) {
       console.error("Failed to add examiner to Type Rating thread:", err);
+      res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  // Posts the confirmed checkride date/time/server to the thread and
+  // pings both the pilot and examiner, since setting a schedule in the
+  // Crew Center previously left them with no notification at all -- the
+  // schedule only existed on the staff side until someone checked back.
+  app.post("/typerating-schedule", async (req, res) => {
+    if (!PILOT_APP_API_KEY) return res.status(503).json({ ok: false, error: "not_configured" });
+    if (req.headers["x-prva-key"] !== PILOT_APP_API_KEY) return res.status(401).json({ ok: false, error: "unauthorized" });
+    if (!client.isReady()) return res.status(503).json({ ok: false, error: "bot_not_ready" });
+
+    const {
+      threadId, pilotDiscordId, examinerDiscordId, pilotName, examinerName, examinerPosition,
+      aircraftIcao, aircraftName, scheduledDate, scheduledTime,
+    } = req.body || {};
+    if (!threadId || !pilotDiscordId || !examinerDiscordId || !scheduledDate) {
+      return res.status(400).json({ ok: false, error: "missing_fields" });
+    }
+
+    try {
+      const thread = await client.channels.fetch(threadId).catch(() => null);
+      if (!thread || !thread.isThread()) {
+        return res.status(404).json({ ok: false, error: "thread_not_found" });
+      }
+
+      const embed = new EmbedBuilder()
+        .setColor(PRVA_RED)
+        .setTitle("Checkride Scheduled")
+        .addFields(
+          { name: "Aircraft", value: `${clean(aircraftIcao, 10)} — ${clean(aircraftName, 80)}`, inline: true },
+          { name: "Server", value: "Training Server", inline: true },
+          { name: "Date", value: clean(scheduledDate, 20), inline: true },
+          { name: "Time", value: clean(scheduledTime, 20), inline: true },
+          { name: "Pilot", value: `<@${pilotDiscordId}> (${clean(pilotName, 100)})`, inline: true },
+          {
+            name: "Examiner",
+            value: `<@${examinerDiscordId}> (${clean(examinerName, 100)})${examinerPosition ? ` — ${clean(examinerPosition, 60)}` : ""}`,
+            inline: true,
+          }
+        )
+        .setTimestamp(new Date());
+
+      await thread.send({
+        content: `<@${pilotDiscordId}> <@${examinerDiscordId}> your checkride has been scheduled — see the details below.`,
+        embeds: [embed],
+      });
+
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("Failed to post Type Rating schedule:", err);
       res.status(500).json({ ok: false, error: "internal_error" });
     }
   });

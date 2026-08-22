@@ -7,6 +7,7 @@
 // it left off (and fires any reminder it missed while it was down)
 // instead of silently dropping it. See sql/053_typerating_reminders.sql.
 import { createClient } from "@supabase/supabase-js";
+import WebSocket from "ws";
 import { EmbedBuilder } from "discord.js";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "./env.js";
 import { PRVA_RED } from "./forumPosts.js";
@@ -16,8 +17,14 @@ const POLL_INTERVAL_MS = 60_000;
 export function startCheckrideReminderLoop(client) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return;
 
+  // supabase-js always spins up a realtime client internally, even though
+  // this file only ever does plain select/update -- on Node < 22 (no
+  // native WebSocket global, which is what Wispbyte runs) that crashes
+  // the whole process at createClient() unless a WebSocket implementation
+  // is handed in explicitly.
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { autoRefreshToken: false, persistSession: false }
+    auth: { autoRefreshToken: false, persistSession: false },
+    realtime: { transport: WebSocket }
   });
 
   async function sendReminder(row) {

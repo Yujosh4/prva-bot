@@ -103,6 +103,9 @@ website to reach (see **Website wiring**). See **Hosting** below.
    - The `#pilot-applications` forum channel → **Channel ID**
      (`PILOT_APPLICATIONS_FORUM_CHANNEL_ID`)
    - The `#type-rating` text channel → **Channel ID** (`TYPE_RATING_CHANNEL_ID`)
+   - Your "Type Rating Examiner (TRE)" role (Server Settings → Roles → right-click it) →
+     **Role ID** (`TYPE_RATING_EXAMINER_ROLE_ID`) -- optional, falls back to `STAFF_ROLE_ID`
+     if unset
    - Your Staff role (Server Settings → Roles → right-click it) → **Role ID**
      (`STAFF_ROLE_ID`)
    - Your bot's application → **Application ID**, on the General Information page in the

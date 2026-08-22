@@ -11,7 +11,7 @@
 
 import express from "express";
 import { ChannelType, EmbedBuilder } from "discord.js";
-import { PORT, STAFF_ROLE_ID, PILOT_APP_API_KEY, TYPE_RATING_CHANNEL_ID } from "./env.js";
+import { PORT, STAFF_ROLE_ID, PILOT_APP_API_KEY, TYPE_RATING_CHANNEL_ID, TYPE_RATING_EXAMINER_ROLE_ID } from "./env.js";
 import { PRVA_RED, buildDecisionRow, createForumThread } from "./forumPosts.js";
 
 const PILOT_TAG_NAME = "Pilot Application";
@@ -168,7 +168,7 @@ export function startPilotApplicationServer(client) {
         .setTimestamp(new Date());
 
       await thread.send({
-        content: `<@&${STAFF_ROLE_ID}> New Type Rating request from <@${pilotDiscordId}>.`,
+        content: `<@&${TYPE_RATING_EXAMINER_ROLE_ID || STAFF_ROLE_ID}> New Type Rating request from <@${pilotDiscordId}>.`,
         embeds: [embed]
       });
 

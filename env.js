@@ -6,6 +6,7 @@ export const {
   GUILD_ID,
   PILOT_APPLICATIONS_FORUM_CHANNEL_ID,
   TYPE_RATING_CHANNEL_ID,
+  TYPE_RATING_EXAMINER_ROLE_ID,
   STAFF_ROLE_ID,
   PILOT_APP_API_KEY,
   ADMIN_USER_ID,
@@ -28,6 +29,13 @@ if (!TYPE_RATING_CHANNEL_ID) {
     "TYPE_RATING_CHANNEL_ID is not set — the /typerating-request and /typerating-assign-examiner " +
       "HTTP endpoints will refuse every request until it is. Needs a plain text channel (not a " +
       "forum), since Type Rating threads are real private threads, which forum channels can't create."
+  );
+}
+
+if (!TYPE_RATING_EXAMINER_ROLE_ID) {
+  console.warn(
+    "TYPE_RATING_EXAMINER_ROLE_ID is not set — new Type Rating requests will ping STAFF_ROLE_ID instead " +
+      "(everything still works, just pings the wrong role)."
   );
 }
 

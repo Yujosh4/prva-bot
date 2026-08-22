@@ -186,16 +186,17 @@ export function startPilotApplicationServer(client) {
   // this just gets the examiner into the conversation and posts a card
   // about who they are, since a bare Discord ID/mention tells the pilot
   // nothing about who's about to check them out. examinerName/
-  // examinerIfc/examinerPosition are all optional -- staff types them in
+  // examinerIfc/examinerPosition are all required -- staff types them in
   // by hand at assign time (there's no table linking a Discord ID to an
-  // IFC username or VA position), so the card only shows what's given.
+  // IFC username or VA position), so this is the only way the card gets
+  // real info instead of a bare mention.
   app.post("/typerating-assign-examiner", async (req, res) => {
     if (!PILOT_APP_API_KEY) return res.status(503).json({ ok: false, error: "not_configured" });
     if (req.headers["x-prva-key"] !== PILOT_APP_API_KEY) return res.status(401).json({ ok: false, error: "unauthorized" });
     if (!client.isReady()) return res.status(503).json({ ok: false, error: "bot_not_ready" });
 
     const { threadId, examinerDiscordId, examinerName, examinerIfc, examinerPosition } = req.body || {};
-    if (!threadId || !examinerDiscordId) {
+    if (!threadId || !examinerDiscordId || !examinerName || !examinerIfc || !examinerPosition) {
       return res.status(400).json({ ok: false, error: "missing_fields" });
     }
 
